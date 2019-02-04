@@ -8,6 +8,8 @@ using System.Web;
 using System.Web.Mvc;
 using Contoso_Unoversity_app_test.DAL;
 using Contoso_Unoversity_app_test.Models;
+using PagedList;
+using System.Data.Entity.Infrastructure;
 
 namespace Contoso_Unoversity_app_test.Controllers
 {
@@ -16,11 +18,50 @@ namespace Contoso_Unoversity_app_test.Controllers
         private SchoolContext db = new SchoolContext();
 
         // GET: Students
-        public ActionResult Index()
+        public ViewResult Index(string sortOrder, string currentFilter, string searchString, int? page)
         {
-            return View(db.Students.ToList());
-        }
+            ViewBag.CurrentSort = sortOrder;
+            ViewBag.NameSortParm = String.IsNullOrEmpty(sortOrder) ? "name_desc" : "";
+            ViewBag.DateSortParm = sortOrder == "Date" ? "date_desc" : "Date";
+            
 
+            if (searchString != null)
+            {
+                page = 1;
+            }
+            else
+            {
+                searchString = currentFilter;
+            }
+
+            ViewBag.CurrentFilter = searchString;
+
+            var students = from s in db.Students select s;
+
+            if (!String.IsNullOrEmpty(searchString))
+            {
+                students = students.Where(s => s.LastName.Contains(searchString) || s.FirstMidName.Contains(searchString)); 
+            }
+
+                        switch (sortOrder)
+            {
+                case "name_desc":
+                    students = students.OrderByDescending(s => s.LastName);
+                    break;
+                case "Date":
+                    students = students.OrderBy(s => s.EnrollmentDate);
+                    break;
+                case "date_desc":
+                    students = students.OrderByDescending(s => s.EnrollmentDate);
+                    break;
+                default: //Name by ascending
+                    students = students.OrderBy(s => s.LastName);
+                    break;
+            }
+            int pageSize = 3;
+            int pageNumber = page ?? 1;
+            return View(students.ToPagedList(pageNumber, pageSize));
+        }
         // GET: Students/Details/5
         public ActionResult Details(int? id)
         {
@@ -59,7 +100,7 @@ namespace Contoso_Unoversity_app_test.Controllers
                 }
 
             }
-            catch (DataException dex)
+            catch (RetryLimitExceededException /*dex*/)
             {
                 ModelState.AddModelError("", "Unable to save changes. Try again, and if the problem persists see your system administrator.");
             }
@@ -99,17 +140,17 @@ namespace Contoso_Unoversity_app_test.Controllers
                 {
                     db.SaveChanges();
                     return RedirectToAction("Index");
-                
+
                 }
-                catch (DataException /*dex*/)
+                catch (RetryLimitExceededException /*dex*/)
                 {
                     ModelState.AddModelError("", "Unable to save changes. Try again, and if the problem persist, see your system administrator");
                 }
-                
+
             }
             return View(studentToUpdate);
         }
-           
+
 
 
         /*
@@ -142,11 +183,21 @@ namespace Contoso_Unoversity_app_test.Controllers
         // POST: Students/Delete/5
         [HttpPost, ActionName("Delete")]
         [ValidateAntiForgeryToken]
-        public ActionResult DeleteConfirmed(int id)
+        public ActionResult Delete(int id)
         {
-            Student student = db.Students.Find(id);
-            db.Students.Remove(student);
-            db.SaveChanges();
+             
+            try
+            {
+                Student student = db.Students.Find(id);
+                db.Students.Remove(student);
+                db.SaveChanges();
+                
+            }
+            catch (RetryLimitExceededException /*des*/)
+            {
+                return RedirectToAction("Delete", new { id, saveChangesError = true });
+
+            }
             return RedirectToAction("Index");
         }
 
